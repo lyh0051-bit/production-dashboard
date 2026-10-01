@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>생산관리 대시보드</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- SheetJS (Excel Parser) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- Chart.js (Data Visualization) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- html2pdf.js (PDF Export) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .drag-active { background-color: #eff6ff; border-color: #3b82f6; }
+        
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <nav class="bg-white border-b border-slate-200 shadow-sm px-6 py-4 flex justify-between items-center sticky top-0 z-50">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-blue-600 rounded-lg text-white">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold text-slate-800">생산관리 대시보드</h1>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <button id="btn-reset" class="hidden text-sm font-medium text-slate-600 hover:text-slate-900 transition" onclick="resetDashboard()">
+                다른 파일 업로드
+            </button>
+            <button id="btn-pdf" onclick="exportPDF()" class="hidden flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-medium transition shadow-sm">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                PDF 다운로드
+            </button>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto p-6 w-full flex-grow">
+        
+        <!-- 업로드 영역 -->
+        <div id="upload-section" class="mt-10">
+            <div id="drop-zone" class="border-2 border-dashed border-slate-300 bg-white rounded-xl p-16 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors duration-200">
+                <div class="mx-auto w-16 h-16 mb-4 text-slate-400 bg-slate-100 rounded-full flex items-center justify-center">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                </div>
+                <h3 class="text-xl font-semibold text-slate-700 mb-2">엑셀 파일을 이곳에 드래그하거나 클릭하여 업로드하세요</h3>
+                <p class="text-slate-500 text-sm mb-4">지원 파일 형식: .xlsx, .xls, .csv</p>
+                <input type="file" id="file-input" class="hidden" accept=".xlsx, .xls, .csv" />
+            </div>
+            <div id="error-message" class="hidden mt-4 p-4 bg-red-50 text-red-600 rounded-lg border border-red-200 text-center"></div>
+        </div>
+
+        <!-- 대시보드 콘텐츠 영역 (PDF 출력의 기준점) -->
+        <div id="dashboard-content" class="hidden flex-col gap-6 bg-[#f8fafc] p-2">
+            
+            <!-- KPI 카드 4개 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- 총 계획량 -->
+                <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+                    <p class="text-sm font-medium text-slate-500 mb-1">총 계획량</p>
+                    <h3 id="kpi-plan" class="text-3xl font-bold text-slate-800">0</h3>
+                </div>
+                <!-- 총 실적량 -->
+                <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+                    <p class="text-sm font-medium text-slate-500 mb-1">총 실적량</p>
+                    <h3 id="kpi-actual" class="text-3xl font-bold text-[#3b82f6]">0</h3>
+                </div>
+                <!-- 평균 달성률 -->
+                <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+                    <p class="text-sm font-medium text-slate-500 mb-1">평균 달성률</p>
+                    <h3 id="kpi-achieve" class="text-3xl font-bold text-[#10b981]">0%</h3>
+                </div>
+                <!-- 평균 불량률 -->
+                <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+                    <p class="text-sm font-medium text-slate-500 mb-1">평균 불량률</p>
+                    <h3 id="kpi-defect" class="text-3xl font-bold text-[#8b5cf6]">0%</h3>
+                </div>
+            </div>
+
+            <!-- 차트 영역 -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 h-[450px]">
+                <h3 class="text-lg font-semibold text-slate-800 mb-4">생산 실적 및 품질 지표 추이</h3>
+                <div class="relative h-full w-full pb-10">
+                    <canvas id="productionChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 데이터 테이블 영역 -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-6 border-b border-slate-200">
+                    <h3 class="text-lg font-semibold text-slate-800">상세 실적 데이터</h3>
+                </div>
+                <!-- PDF 출력 시 테이블이 잘리지 않게 하려면 오버플로우 설정을 제어해야 합니다. -->
+                <div id="table-container" class="overflow-x-auto max-h-[500px]">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-50 text-slate-600 text-sm sticky top-0 shadow-sm z-10">
+                            <tr>
+                                <th class="py-3 px-4 font-semibold border-b whitespace-nowrap">일자</th>
+                                <th class="py-3 px-4 font-semibold border-b whitespace-nowrap">생산라인</th>
+                                <th class="py-3 px-4 font-semibold border-b whitespace-nowrap">품목명</th>
+                                <th class="py-3 px-4 font-semibold border-b text-right whitespace-nowrap">계획량</th>
+                                <th class="py-3 px-4 font-semibold border-b text-right whitespace-nowrap">실적량</th>
+                                <th class="py-3 px-4 font-semibold border-b text-right whitespace-nowrap">달성률</th>
+                                <th class="py-3 px-4 font-semibold border-b text-right whitespace-nowrap">불량수량</th>
+                                <th class="py-3 px-4 font-semibold border-b text-right whitespace-nowrap">불량률</th>
+                                <th class="py-3 px-4 font-semibold border-b text-right whitespace-nowrap">비가동(분)</th>
+                                <th class="py-3 px-4 font-semibold border-b whitespace-nowrap">비가동사유</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body" class="text-slate-700 text-sm divide-y divide-slate-100">
+                            <!-- JS를 통해 엑셀 데이터 렌더링 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+        </div>
+    </main>
+
+    <script>
+        // 글로벌 상태 변수
+        let chartInstance = null;
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        
+        // 이벤트 리스너 등록
+        document.addEventListener('DOMContentLoaded', () => {
+            setupDragAndDrop();
+        });
+
+        // 드래그 & 드롭 세팅
+        function setupDragAndDrop() {
+            dropZone.addEventListener('click', () => fileInput.click());
+            
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('drag-active');
+            });
+            
+            dropZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-active');
+            });
+            
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-active');
+                if (e.dataTransfer.files.length > 0) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFile(e.target.files[0]);
+                }
+            });
+        }
+
+        // 엑셀 파일 읽기 (SheetJS)
+        function handleFile(file) {
+            const reader = new FileReader();
+            hideError();
+            
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // JSON 변환 (raw: false로 설정하여 셀에 보이는 텍스트 포맷을 최대한 유지)
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: "" });
+                    
+                    if (jsonData.length === 0) {
+                        showError("엑셀 파일에 데이터가 없습니다.");
+                        return;
+                    }
+                    
+                    processData(jsonData);
+                    
+                } catch (error) {
+                    console.error("File Parse Error:", error);
+                    showError("파일을 읽는 중 오류가 발생했습니다. 올바른 엑셀 파일인지 확인해주세요.");
+                }
+            };
+            
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 숫자 파싱 유틸리티 (콤마 제거나 공백 처리)
+        function parseNum(val) {
+            if (typeof val === 'number') return val;
+            if (!val) return 0;
+            const cleanStr = String(val).replace(/,/g, '').replace(/%/g, '');
+            return parseFloat(cleanStr) || 0;
+        }
+
+        // 에러 UI 제어
+        function showError(msg) {
+            const errDiv = document.getElementById('error-message');
+            errDiv.textContent = msg;
+            errDiv.classList.remove('hidden');
+        }
+        function hideError() {
+            document.getElementById('error-message').classList.add('hidden');
+        }
+
+        // 대시보드 리셋
+        function resetDashboard() {
+            document.getElementById('upload-section').classList.remove('hidden');
+            document.getElementById('dashboard-content').classList.add('hidden');
+            document.getElementById('dashboard-content').classList.remove('flex');
+            document.getElementById('btn-reset').classList.add('hidden');
+            document.getElementById('btn-pdf').classList.add('hidden');
+            document.getElementById('btn-pdf').classList.remove('flex');
+            fileInput.value = '';
+            
+            if (chartInstance) {
+                chartInstance.destroy();
+                chartInstance = null;
+            }
+        }
+
+        // 데이터 처리 메인 로직
+        function processData(data) {
+            // UI 스위칭
+            document.getElementById('upload-section').classList.add('hidden');
+            document.getElementById('dashboard-content').classList.remove('hidden');
+            document.getElementById('dashboard-content').classList.add('flex');
+            document.getElementById('btn-reset').classList.remove('hidden');
+            document.getElementById('btn-pdf').classList.remove('hidden');
+            document.getElementById('btn-pdf').classList.add('flex');
+
+            updateKPIs(data);
+            updateChart(data);
+            updateTable(data);
+        }
+
+        // KPI 계산 및 렌더링
+        function updateKPIs(data) {
+            let totalPlan = 0;
+            let totalActual = 0;
+            let totalDefect = 0;
+
+            data.forEach(row => {
+                totalPlan += parseNum(row['계획량'] || row['계획'] || 0);
+                totalActual += parseNum(row['실적량'] || row['실적'] || 0);
+                totalDefect += parseNum(row['불량수량'] || row['불량'] || 0);
+            });
+
+            // 평균 달성률 & 불량률 계산
+            const avgAchieve = totalPlan > 0 ? ((totalActual / totalPlan) * 100).toFixed(1) : 0;
+            const avgDefect = totalActual > 0 ? ((totalDefect / totalActual) * 100).toFixed(1) : 0;
+
+            document.getElementById('kpi-plan').textContent = totalPlan.toLocaleString();
+            document.getElementById('kpi-actual').textContent = totalActual.toLocaleString();
+            document.getElementById('kpi-achieve').textContent = `${avgAchieve}%`;
+            document.getElementById('kpi-defect').textContent = `${avgDefect}%`;
+        }
+
+        // 혼합형 이중 축 차트 렌더링
+        function updateChart(data) {
+            // 일자별 데이터 병합
+            const dateMap = {};
+            data.forEach(row => {
+                let dateStr = row['일자'] || row['날짜'] || '알수없음';
+                dateStr = String(dateStr).trim();
+                
+                const plan = parseNum(row['계획량'] || row['계획'] || 0);
+                const actual = parseNum(row['실적량'] || row['실적'] || 0);
+                const defect = parseNum(row['불량수량'] || row['불량'] || 0);
+                
+                if (!dateMap[dateStr]) dateMap[dateStr] = { plan: 0, actual: 0, defect: 0 };
+                
+                dateMap[dateStr].plan += plan;
+                dateMap[dateStr].actual += actual;
+                dateMap[dateStr].defect += defect;
+            });
+
+            const sortedDates = Object.keys(dateMap).sort();
+            
+            const planData = [];
+            const actualData = [];
+            const defectData = [];
+            const achieveRateData = [];
+            const defectRateData = [];
+
+            sortedDates.forEach(date => {
+                const p = dateMap[date].plan;
+                const a = dateMap[date].actual;
+                const d = dateMap[date].defect;
+                
+                planData.push(p);
+                actualData.push(a);
+                defectData.push(d);
+                
+                achieveRateData.push(p > 0 ? ((a / p) * 100).toFixed(1) : 0);
+                defectRateData.push(a > 0 ? ((d / a) * 100).toFixed(2) : 0);
+            });
+
+            const ctx = document.getElementById('productionChart').getContext('2d');
+            if (chartInstance) { chartInstance.destroy(); }
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sortedDates,
+                    datasets: [
+                        {
+                            type: 'line',
+                            label: '달성률(%)',
+                            data: achieveRateData,
+                            borderColor: '#10b981', /* 초록색 */
+                            backgroundColor: '#10b981',
+                            yAxisID: 'y1',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            pointRadius: 4,
+                            order: 1
+                        },
+                        {
+                            type: 'line',
+                            label: '불량률(%)',
+                            data: defectRateData,
+                            borderColor: '#8b5cf6', /* 보라색 */
+                            backgroundColor: '#8b5cf6',
+                            yAxisID: 'y1',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            pointRadius: 4,
+                            order: 2
+                        },
+                        {
+                            type: 'bar',
+                            label: '계획량',
+                            data: planData,
+                            backgroundColor: 'rgba(239, 68, 68, 0.85)', /* 빨간색 */
+                            borderColor: '#ef4444',
+                            borderWidth: 1,
+                            yAxisID: 'y',
+                            order: 3
+                        },
+                        {
+                            type: 'bar',
+                            label: '실적량',
+                            data: actualData,
+                            backgroundColor: '#3b82f6', /* 블루 */
+                            borderColor: '#2563eb',
+                            borderWidth: 1,
+                            yAxisID: 'y',
+                            order: 4
+                        },
+                        {
+                            type: 'bar',
+                            label: '불량수량',
+                            data: defectData,
+                            backgroundColor: '#9ca3af', /* 회색 */
+                            borderColor: '#6b7280',
+                            borderWidth: 1,
+                            yAxisID: 'y',
+                            order: 5
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) { label += ': '; }
+                                    if (context.parsed.y !== null) {
+                                        if (context.dataset.yAxisID === 'y1') {
+                                            label += context.parsed.y + '%';
+                                        } else {
+                                            label += context.parsed.y.toLocaleString() + '개';
+                                        }
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: '수량 (개)', font: { size: 12, weight: 'bold' } }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: '비율 (%)', font: { size: 12, weight: 'bold' } },
+                            grid: { drawOnChartArea: false } // 좌측 y축 눈금선과 안 겹치게 설정
+                        }
+                    }
+                }
+            });
+        }
+
+        // 데이터 테이블 렌더링
+        function updateTable(data) {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-50 transition-colors';
+                
+                // 컬럼명 매핑 (유연하게 처리)
+                const date = row['일자'] || row['날짜'] || '-';
+                const line = row['생산라인'] || row['라인'] || '-';
+                const item = row['품목명'] || row['품목'] || '-';
+                
+                const plan = parseNum(row['계획량'] || row['계획']);
+                const actual = parseNum(row['실적량'] || row['실적']);
+                const achieveRate = row['달성률'] || (plan > 0 ? (actual / plan * 100).toFixed(1) + '%' : '0%');
+                const defect = parseNum(row['불량수량'] || row['불량']);
+                const defectRate = row['불량률'] || (actual > 0 ? (defect / actual * 100).toFixed(1) + '%' : '0%');
+                const downtime = row['비가동시간(분)'] || row['비가동시간'] || '0';
+                const downReason = row['비가동사유'] || '-';
+
+                tr.innerHTML = `
+                    <td class="py-3 px-4 border-b whitespace-nowrap">${date}</td>
+                    <td class="py-3 px-4 border-b whitespace-nowrap">${line}</td>
+                    <td class="py-3 px-4 border-b font-medium text-slate-800 whitespace-nowrap">${item}</td>
+                    <td class="py-3 px-4 border-b text-right whitespace-nowrap">${plan.toLocaleString()}</td>
+                    <td class="py-3 px-4 border-b text-right text-blue-600 font-medium whitespace-nowrap">${actual.toLocaleString()}</td>
+                    <td class="py-3 px-4 border-b text-right font-medium whitespace-nowrap">${achieveRate}</td>
+                    <td class="py-3 px-4 border-b text-right text-gray-500 whitespace-nowrap">${defect.toLocaleString()}</td>
+                    <td class="py-3 px-4 border-b text-right text-purple-600 whitespace-nowrap">${defectRate}</td>
+                    <td class="py-3 px-4 border-b text-right text-amber-600 whitespace-nowrap">${downtime}</td>
+                    <td class="py-3 px-4 border-b text-slate-500 text-sm whitespace-nowrap">${downReason}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // PDF 다운로드 강제 실행 버그 픽스
+        function exportPDF() {
+            const element = document.getElementById('dashboard-content');
+            const pdfButton = document.getElementById('btn-pdf');
+            
+            // 버튼 상태 변경
+            const originalText = pdfButton.innerHTML;
+            pdfButton.innerHTML = `<span class="animate-pulse">PDF 생성 중...</span>`;
+            pdfButton.disabled = true;
+
+            // PDF 렌더링 시 스크롤이 있는 테이블이 잘리지 않도록 임시로 스타일 변경
+            const tableContainer = document.getElementById('table-container');
+            const originalMaxHeight = tableContainer.style.maxHeight;
+            tableContainer.style.maxHeight = 'none';
+            tableContainer.classList.remove('overflow-x-auto');
+
+            const opt = {
+                margin:       10,
+                filename:     '생산관리_대시보드.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+            };
+
+            // [중요] 반드시 .save() 를 호출해야 브라우저에서 다운로드를 수행하며 바이너리 텍스트 렌더링을 방지함
+            html2pdf().set(opt).from(element).save().then(() => {
+                // UI 원복
+                pdfButton.innerHTML = originalText;
+                pdfButton.disabled = false;
+                tableContainer.style.maxHeight = originalMaxHeight || '500px';
+                tableContainer.classList.add('overflow-x-auto');
+            }).catch(err => {
+                console.error("PDF 생성 오류:", err);
+                alert("PDF 생성 중 오류가 발생했습니다.");
+                pdfButton.innerHTML = originalText;
+                pdfButton.disabled = false;
+            });
+        }
+    </script>
+</body>
+</html>
